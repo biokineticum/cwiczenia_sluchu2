@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ćwiczenia Słuchu - Trening APD dla Dzieci</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+
+        // Ikony jako komponenty SVG
+        const Play = () => <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>;
+        const Pause = () => <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>;
+        const Volume2 = () => <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>;
+        const Timer = () => <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>;
+        const User = () => <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>;
+        const Download = () => <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>;
+        const Mic = () => <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>;
+        const Headphones = () => <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3z"/><path d="M3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>;
+        const Target = () => <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>;
+        const BarChart3 = () => <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>;
+
+        function KompletnyTreningAPD() {
+            // Stan główny
+            const [currentModule, setCurrentModule] = useState('speechInNoise');
+            const [sessionTime, setSessionTime] = useState(0);
+            const [fatigueLevel, setFatigueLevel] = useState(0);
+            const [showParentPanel, setShowParentPanel] = useState(false);
+            const [volumeCalibrated, setVolumeCalibrated] = useState(false);
+
+            // Adaptacyjna kontrola trudności
+            const [adaptiveState, setAdaptiveState] = useState({
+                correctStreak: 0,
+                reversals: 0,
+                currentSNR: 10,
+                stepSize: 2,
+                history: []
+            });
+
+            // Moduł: Mowa w szumie
+            const [speechInNoiseState, setSpeechInNoiseState] = useState({
+                currentSentence: '',
+                sentenceWords: [],
+                noiseType: 'white',
+                userInput: ''
+            });
+
+            // Moduł: Rozpoznawanie dźwięków
+            const [soundRecognitionState, setSoundRecognitionState] = useState({
+                options: [],
+                correctSound: '',
+                currentSNR: 15,
+                noiseType: 'white',
+                soundsLibrary: [
+                    { name: 'Pies szczeka', sound: 'hau hau hau', image: '🐕' },
+                    { name: 'Kot miauczy', sound: 'miau miau miau', image: '🐱' },
+                    { name: 'Krowa robi', sound: 'muuu muuu', image: '🐄' },
+                    { name: 'Samochód jedzie', sound: 'wruum wruum wruum', image: '🚗' },
+                    { name: 'Deszcz pada', sound: 'kap kap kap kap', image: '🌧️' },
+                    { name: 'Ptaki śpiewają', sound: 'ćwir ćwir ćwir', image: '🐦' },
+                    { name: 'Dzwonek dzwoni', sound: 'dzyń dzyń dzyń', image: '🔔' },
+                    { name: 'Bęben bije', sound: 'bum bum bum bum', image: '🥁' }
+                ]
+            });
+
+            // Sekwencje słuchowe
+            const [sequenceState, setSequenceState] = useState({
+                currentSequence: [],
+                userSequence: [],
+                sequenceLength: 3,
+                stimulusType: 'words'
+            });
+
+            // Lateralizacja
+            const [lateralizationState, setLateralizationState] = useState({
+                currentEar: 'left',
+                panningValue: -1
+            });
+
+            // Audio + Motor
+            const [audioMotorState, setAudioMotorState] = useState({
+                currentCommand: '',
+                commands: [
+                    'Klaśnij jeden raz',
+                    'Tupnij dwa razy',
+                    'Podnieś prawą rękę',
+                    'Dotknij nosa',
+                    'Klaśnij dwa razy i tupnij',
+                    'Podnieś lewą nogę'
+                ],
+                parentCheck: false
+            });
+
+            const audioContext = useRef(null);
+            const sessionTimer = useRef(null);
+
+            // Biblioteki danych
+            const polishSentences = [
+                'Kot siedzi na macie',
+                'Pies biegnie po trawie',
+                'Słońce świeci jasno',
+                'Mama gotuje obiad',
+                'Dzieci bawią się w ogrodzie',
+                'Auto jedzie szybko',
+                'Ptaki śpiewają rano',
+                'Deszcz pada na dach',
+                'Kwiaty rosną w doniczce',
+                'Tata czyta gazetę'
+            ];
+
+            const sequenceWords = ['DOM', 'KOT', 'PIES', 'AUTO', 'SŁOŃCE', 'WODA', 'DRZEWO', 'MAMA'];
+
+            // Funkcje audio
+            const initializeAudioContext = useCallback(() => {
+                if (!audioContext.current) {
+                    audioContext.current = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                return audioContext.current;
+            }, []);
+
+            // Generator szumów
+            const generateNoise = (ctx, type, duration = 10) => {
+                console.log(`T=${(Date.now() - window.testStartTime) / 1000}: GENEROWANIE SZUMU ${type.toUpperCase()}`);
+
+                const bufferSize = ctx.sampleRate * duration;
+                const noiseBuffer = ctx.createBuffer(2, bufferSize, ctx.sampleRate);
+
+                for (let channel = 0; channel < noiseBuffer.numberOfChannels; channel++) {
+                    const channelData = noiseBuffer.getChannelData(channel);
+
+                    switch(type) {
+                        case 'white':
+                            for (let i = 0; i < bufferSize; i++) {
+                                channelData[i] = (Math.random() * 2 - 1) * 0.3;
+                            }
+                            break;
+
+                        case 'pink':
+                            let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+                            for (let i = 0; i < bufferSize; i++) {
+                                const white = Math.random() * 2 - 1;
+                                b0 = 0.99886 * b0 + white * 0.0555179;
+                                b1 = 0.99332 * b1 + white * 0.0750759;
+                                b2 = 0.96900 * b2 + white * 0.1538520;
+                                b3 = 0.86650 * b3 + white * 0.3104856;
+                                b4 = 0.55000 * b4 + white * 0.5329522;
+                                b5 = -0.7616 * b5 - white * 0.0168980;
+                                const pink = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362;
+                                b6 = white * 0.115926;
+                                channelData[i] = pink * 0.11;
+                            }
+                            break;
+
+                        case 'brown':
+                            let lastOut = 0;
+                            for (let i = 0; i < bufferSize; i++) {
+                                const white = Math.random() * 2 - 1;
+                                const brown = (lastOut + (0.02 * white)) / 1.02;
+                                lastOut = brown;
+                                channelData[i] = brown * 3.5;
+                            }
+                            break;
+
+                        default:
+                            // Biały szum jako domyślny
+                            for (let i = 0; i < bufferSize; i++) {
+                                channelData[i] = (Math.random() * 2 - 1) * 0.3;
+                            }
+                    }
+                }
+
+                return noiseBuffer;
+            };
+
+            // Odtwarzanie z panningiem
+            const playWithPanning = (frequency, pan = 0, duration = 1000) => {
+                const ctx = initializeAudioContext();
+
+                const oscillator = ctx.createOscillator();
+                const gainNode = ctx.createGain();
+                const panNode = ctx.createStereoPanner();
+
+                oscillator.frequency.setValueAtTime(frequency, ctx.currentTime);
+                oscillator.type = 'sine';
+
+                panNode.pan.setValueAtTime(pan, ctx.currentTime);
+                gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+
+                oscillator.connect(panNode);
+                panNode.connect(gainNode);
+                gainNode.connect(ctx.destination);
+
+                oscillator.start();
+                oscillator.stop(ctx.currentTime + duration / 1000);
+            };
+
+            // Test równoległych kanałów - KLUCZ APLIKACJI!
+            const playParallelChannelsTest = (noiseType, speechText, snr = 10) => {
+                window.testStartTime = Date.now();
+
+                const ctx = initializeAudioContext();
+                console.log(`T=0.000: ROZPOCZYNAM TEST RÓWNOLEGŁYCH KANAŁÓW`);
+                console.log(`T=0.000: Szum: ${noiseType}, SNR: ${snr}dB, Tekst: "${speechText}"`);
+
+                // KANAŁ 1: SZUM - startuje NATYCHMIAST
+                const noiseBuffer = generateNoise(ctx, noiseType, 10);
+                const noiseSource = ctx.createBufferSource();
+                const noiseGain = ctx.createGain();
+
+                noiseSource.buffer = noiseBuffer;
+
+                const noiseLevel = Math.pow(10, -snr/20) * 0.5;
+                noiseGain.gain.setValueAtTime(noiseLevel, ctx.currentTime);
+                console.log(`T=0.000: SZUM ${noiseType.toUpperCase()} ROZPOCZĘTY - poziom: ${noiseLevel.toFixed(3)}`);
+
+                noiseSource.connect(noiseGain);
+                noiseGain.connect(ctx.destination);
+                noiseSource.start(ctx.currentTime);
+                noiseSource.stop(ctx.currentTime + 10);
+
+                // KANAŁ 2: MOWA - startuje po 2-2.5 sekundach
+                const speechDelay = 2 + Math.random() * 0.5;
+                console.log(`T=${speechDelay.toFixed(3)}: MOWA ZAPLANOWANA`);
+
+                setTimeout(() => {
+                    console.log(`T=${(Date.now() - window.testStartTime) / 1000}: MOWA START - "${speechText}"`);
+
+                    if ('speechSynthesis' in window) {
+                        const utterance = new SpeechSynthesisUtterance(speechText);
+                        utterance.lang = 'pl-PL';
+                        utterance.rate = 0.8;
+                        utterance.volume = 0.7;
+
+                        utterance.onstart = () => {
+                            console.log(`T=${(Date.now() - window.testStartTime) / 1000}: SYNTEZA MOWY ROZPOCZĘTA`);
+                        };
+
+                        utterance.onend = () => {
+                            console.log(`T=${(Date.now() - window.testStartTime) / 1000}: SYNTEZA MOWY ZAKOŃCZONA`);
+                        };
+
+                        window.speechSynthesis.speak(utterance);
+                    }
+                }, speechDelay * 1000);
+            };
+
+            // Test dźwięków zwierząt z szumem
+            const playSoundWithNoise = (soundText, noiseType, snr = 15) => {
+                window.testStartTime = Date.now();
+
+                const ctx = initializeAudioContext();
+                console.log(`T=0.000: TEST DŹWIĘKU Z SZUMEM: "${soundText}"`);
+
+                const noiseBuffer = generateNoise(ctx, noiseType, 8);
+                const noiseSource = ctx.createBufferSource();
+                const noiseGain = ctx.createGain();
+
+                noiseSource.buffer = noiseBuffer;
+                const noiseLevel = Math.pow(10, -snr/20) * 0.4;
+                noiseGain.gain.setValueAtTime(noiseLevel, ctx.currentTime);
+
+                noiseSource.connect(noiseGain);
+                noiseGain.connect(ctx.destination);
+                noiseSource.start(ctx.currentTime);
+                noiseSource.stop(ctx.currentTime + 8);
+
+                console.log(`T=0.000: SZUM ${noiseType.toUpperCase()} ROZPOCZĘTY`);
+
+                setTimeout(() => {
+                    console.log(`T=${(Date.now() - window.testStartTime) / 1000}: DŹWIĘK ZWIERZĘCIA: "${soundText}"`);
+
+                    if ('speechSynthesis' in window) {
+                        const utterance = new SpeechSynthesisUtterance(soundText);
+                        utterance.lang = 'pl-PL';
+                        utterance.rate = 1.2;
+                        utterance.volume = 0.8;
+                        utterance.pitch = 1.5;
+
+                        window.speechSynthesis.speak(utterance);
+                    }
+                }, 2000);
+            };
+
+            // Algorytm adaptacyjny
+            const updateAdaptive = (correct) => {
+                setAdaptiveState(prev => {
+                    const newHistory = [...prev.history, {
+                        timestamp: Date.now(),
+                        snr: prev.currentSNR,
+                        correct,
+                    }];
+
+                    let newSNR = prev.currentSNR;
+                    let newStreak = correct ? prev.correctStreak + 1 : 0;
+                    let newReversals = prev.reversals;
+                    let newStepSize = prev.stepSize;
+
+                    if (correct) {
+                        if (newStreak >= 2) {
+                            newSNR = Math.max(-20, prev.currentSNR - newStepSize);
+                            newStreak = 0;
+                            newReversals++;
+
+                            if (newReversals > 4) {
+                                newStepSize = Math.max(0.5, newStepSize * 0.7);
+                            }
+                        }
+                    } else {
+                        newSNR = Math.min(30, prev.currentSNR + newStepSize);
+                        newStreak = 0;
+                        newReversals++;
+
+                        if (newReversals > 4) {
+                            newStepSize = Math.max(0.5, newStepSize * 0.7);
+                        }
+                    }
+
+                    return {
+                        correctStreak: newStreak,
+                        reversals: newReversals,
+                        currentSNR: Math.round(newSNR * 10) / 10,
+                        stepSize: newStepSize,
+                        history: newHistory
+                    };
+                });
+            };
+
+            // Timer sesji
+            useEffect(() => {
+                sessionTimer.current = setInterval(() => {
+                    setSessionTime(prev => prev + 1);
+                    setFatigueLevel(prev => Math.min(100, prev + 0.1));
+                }, 1000);
+
+                return () => clearInterval(sessionTimer.current);
+            }, []);
+
+            // Format czasu
+            const formatTime = (seconds) => {
+                const mins = Math.floor(seconds / 60);
+                const secs = seconds % 60;
+                return `${mins}:${secs.toString().padStart(2, '0')}`;
+            };
+
+            // Eksport CSV
+            const exportToCsv = () => {
+                const csvContent = [
+                    ['Data', 'Moduł', 'SNR', 'Poprawne', 'Czas sesji'],
+                    ...adaptiveState.history.map(entry => [
+                        new Date(entry.timestamp).toLocaleDateString(),
+                        currentModule,
+                        entry.snr,
+                        entry.correct ? 'Tak' : 'Nie',
+                        formatTime(sessionTime)
+                    ])
+                ].map(row => row.join(',')).join('\n');
+
+                const blob = new Blob([csvContent], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `trening_apd_${new Date().toISOString().split('T')[0]}.csv`;
+                a.click();
+            };
+
+            return React.createElement('div', { className: "min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 p-4" },
+                // Kalibracja głośności
+                !volumeCalibrated && React.createElement('div', { className: "fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" },
+                    React.createElement('div', { className: "bg-white rounded-lg p-8 max-w-md" },
+                        React.createElement('h3', { className: "text-xl font-bold mb-4" }, 'Kalibracja Głośności'),
+                        React.createElement('p', { className: "text-gray-600 mb-4" }, 'Ustaw głośność tak, aby dźwięk był komfortowo słyszalny.'),
+                        React.createElement('button', {
+                            onClick: () => playWithPanning(1000, 0, 500),
+                            className: "bg-blue-500 text-white px-4 py-2 rounded mr-2"
+                        }, 'Test dźwięku'),
+                        React.createElement('button', {
+                            onClick: () => setVolumeCalibrated(true),
+                            className: "bg-green-500 text-white px-4 py-2 rounded"
+                        }, 'Gotowe'),
+                        React.createElement('p', { className: "text-xs text-gray-500 mt-4" }, '💡 Zalecane: słuchawki nauszne')
+                    )
+                ),
+
+                // Header
+                React.createElement('div', { className: "text-center mb-6" },
+                    React.createElement('h1', { className: "text-3xl font-bold text-gray-800 mb-2" }, 'Amatorski Trening Słuchu dla Dzieci'),
+                    React.createElement('p', { className: "text-gray-600" }, 'Równoległe kanały audio - szum + sygnał')
+                ),
+
+                // Status bar
+                React.createElement('div', { className: "bg-white rounded-lg p-4 mb-6 shadow-sm" },
+                    React.createElement('div', { className: "flex items-center justify-between" },
+                        React.createElement('div', { className: "flex items-center gap-6" },
+                            React.createElement('div', { className: "flex items-center gap-2" },
+                                React.createElement(Timer, { size: 20, className: "text-blue-500" }),
+                                React.createElement('span', null, `Czas: ${formatTime(sessionTime)}`)
+                            ),
+                            React.createElement('div', { className: "flex items-center gap-2" },
+                                React.createElement('span', null, 'Zmęczenie:'),
+                                React.createElement('div', { className: "w-24 h-2 bg-gray-200 rounded" },
+                                    React.createElement('div', {
+                                        className: `h-full rounded transition-all ${
+                                            fatigueLevel < 40 ? 'bg-green-400' :
+                                            fatigueLevel < 70 ? 'bg-yellow-400' : 'bg-red-400'
+                                        }`,
+                                        style: { width: `${fatigueLevel}%` }
+                                    })
+                                )
+                            ),
+                            React.createElement('div', { className: "text-sm text-gray-600" }, `SNR: ${adaptiveState.currentSNR}dB`)
+                        ),
+                        React.createElement('div', { className: "flex gap-2" },
+                            React.createElement('button', {
+                                onClick: () => setShowParentPanel(!showParentPanel),
+                                className: "bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
+                            },
+                                React.createElement(User, { size: 16, className: "inline mr-1" }),
+                                'Panel Rodzica'
+                            ),
+                            React.createElement('button', {
+                                onClick: exportToCsv,
+                                className: "bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+                            },
+                                React.createElement(Download, { size: 16, className: "inline mr-1" }),
+                                'Eksport CSV'
+                            )
+                        )
+                    )
+                ),
+
+                // Panel Rodzica
+                showParentPanel && React.createElement('div', { className: "bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6" },
+                    React.createElement('h3', { className: "font-bold mb-3" }, '📊 Panel dla Rodzica/Terapeuty'),
+                    React.createElement('div', { className: "grid grid-cols-3 gap-4 mb-4" },
+                        React.createElement('div', { className: "bg-white p-3 rounded" },
+                            React.createElement('div', { className: "text-2xl font-bold text-green-600" },
+                                `${Math.round((adaptiveState.history.filter(h => h.correct).length / Math.max(1, adaptiveState.history.length)) * 100)}%`
+                            ),
+                            React.createElement('div', { className: "text-sm text-gray-600" }, 'Skuteczność')
+                        ),
+                        React.createElement('div', { className: "bg-white p-3 rounded" },
+                            React.createElement('div', { className: "text-2xl font-bold text-blue-600" }, `${adaptiveState.currentSNR}dB`),
+                            React.createElement('div', { className: "text-sm text-gray-600" }, 'Aktualny SNR')
+                        ),
+                        React.createElement('div', { className: "bg-white p-3 rounded" },
+                            React.createElement('div', { className: "text-2xl font-bold text-purple-600" }, adaptiveState.history.length),
+                            React.createElement('div', { className: "text-sm text-gray-600" }, 'Próby łącznie')
+                        )
+                    )
+                ),
+
+                // Nawigacja modułów
+                React.createElement('div', { className: "flex flex-wrap gap-2 mb-6 justify-center" },
+                    [
+                        { id: 'speechInNoise', name: '🗣️ Mowa w szumie', icon: Mic },
+                        { id: 'soundRecognition', name: '🎵 Rozpoznawanie dźwięków', icon: Volume2 },
+                        { id: 'auditorySequencing', name: '🔢 Sekwencje słuchowe', icon: BarChart3 },
+                        { id: 'lateralization', name: '👂 Lateralizacja', icon: Headphones },
+                        { id: 'audioMotor', name: '🏃 Słuch + ruch', icon: Target }
+                    ].map(module =>
+                        React.createElement('button', {
+                            key: module.id,
+                            onClick: () => setCurrentModule(module.id),
+                            className: `px-4 py-2 rounded-lg font-semibold transition-all ${
+                                currentModule === module.id
+                                    ? 'bg-blue-600 text-white shadow-lg'
+                                    : 'bg-white text-gray-700 hover:bg-blue-50 border border-gray-200'
+                            }`
+                        },
+                            React.createElement(module.icon, { size: 16, className: "inline mr-2" }),
+                            module.name
+                        )
+                    )
+                ),
+
+                // Moduly treningowe
+                React.createElement('div', { className: "bg-white rounded-lg p-6 shadow-sm" },
+                    // Modul: Mowa w szumie
+                    currentModule === 'speechInNoise' && React.createElement('div', { className: "space-y-6" },
+                        React.createElement('div', { className: "bg-blue-50 rounded-lg p-4" },
+                            React.createElement('div', { className: "flex items-center justify-between mb-4" },
+                                React.createElement('h3', { className: "text-lg font-semibold text-blue-800" }, `SNR: ${adaptiveState.currentSNR}dB`),
+                                React.createElement('div', { className: "text-sm text-gray-600" }, '🎵 Równoległe kanały: mowa + szum')
+                            ),
+
+                            React.createElement('div', { className: "bg-white border border-blue-200 rounded-lg p-3 mb-4" },
+                                React.createElement('div', { className: "flex items-center justify-between mb-2" },
+                                    React.createElement('label', { className: "text-sm font-semibold text-blue-700" }, 'Typ szumu tła:'),
+                                    React.createElement('select', {
+                                        value: speechInNoiseState.noiseType,
+                                        onChange: (e) => setSpeechInNoiseState(prev => ({ ...prev, noiseType: e.target.value })),
+                                        className: "px-2 py-1 text-sm border rounded focus:border-blue-400"
+                                    },
+                                        React.createElement('option', { value: "white" }, '🎵 Biały (równomierny)'),
+                                        React.createElement('option', { value: "pink" }, '🌸 Różowy (naturalny)'),
+                                        React.createElement('option', { value: "brown" }, '🌳 Brązowy (głębokie tony)')
+                                    )
+                                ),
+                                React.createElement('p', { className: "text-xs text-blue-600" }, 'Różne typy szumu symulują rzeczywiste środowiska akustyczne')
+                            ),
+
+                            React.createElement('div', { className: "bg-yellow-100 border border-yellow-300 rounded-lg p-3 mb-4" },
+                                React.createElement('p', { className: "text-sm text-yellow-800" },
+                                    `🔊 T=0s: ${speechInNoiseState.noiseType} szum rozpoczyna`,
+                                    React.createElement('br'),
+                                    '🗣️ T=2s: Zdanie wypowiadane PODCZAS szumu',
+                                    React.createElement('br'),
+                                    '⏱️ Test: 10 sekund równoległego odtwarzania'
+                                )
+                            ),
+
+                            React.createElement('button', {
+                                onClick: () => {
+                                    const sentence = polishSentences[Math.floor(Math.random() * polishSentences.length)];
+                                    setSpeechInNoiseState(prev => ({
+                                        ...prev,
+                                        currentSentence: sentence,
+                                        sentenceWords: sentence.toLowerCase().split(' '),
+                                        userInput: ''
+                                    }));
+
+                                    playParallelChannelsTest(speechInNoiseState.noiseType, sentence, adaptiveState.currentSNR);
+                                },
+                                className: "bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+                            }, '▶️ Rozpocznij Test Równoległych Kanałów')
+                        ),
+
+                        speechInNoiseState.currentSentence && React.createElement('div', { className: "bg-gray-50 rounded-lg p-4" },
+                            React.createElement('h4', { className: "font-semibold mb-3" }, 'Wpisz usłyszane zdanie:'),
+                            React.createElement('input', {
+                                type: "text",
+                                value: speechInNoiseState.userInput,
+                                onChange: (e) => setSpeechInNoiseState(prev => ({ ...prev, userInput: e.target.value })),
+                                className: "w-full p-3 border rounded-lg text-lg",
+                                placeholder: "Wpisz co usłyszałeś..."
+                            }),
+
+                            React.createElement('div', { className: "flex gap-4 mt-4" },
+                                React.createElement('button', {
+                                    onClick: () => {
+                                        const correct = speechInNoiseState.userInput.toLowerCase().trim() === 
+                                                        speechInNoiseState.currentSentence.toLowerCase();
+                                        updateAdaptive(correct);
+
+                                        setSpeechInNoiseState(prev => ({
+                                            ...prev,
+                                            currentSentence: '',
+                                            userInput: ''
+                                        }));
+                                    },
+                                    className: "bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
+                                }, '✅ Sprawdź'),
+
+                                React.createElement('button', {
+                                    onClick: () => setSpeechInNoiseState(prev => ({ ...prev, currentSentence: '', userInput: '' })),
+                                    className: "bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
+                                }, '↻ Reset')
+                            ),
+
+                            React.createElement('div', { className: "mt-4 text-sm text-gray-600" },
+                                React.createElement('strong', null, 'Wzór: '),
+                                speechInNoiseState.currentSentence
+                            )
+                        )
+                    ),
+
+                    // Modul: Rozpoznawanie dźwięków
+                    currentModule === 'soundRecognition' && React.createElement('div', { className: "space-y-6" },
+                        React.createElement('div', { className: "bg-green-50 rounded-lg p-4" },
+                            React.createElement('h3', { className: "text-lg font-semibold text-green-800 mb-4" }, '🎵 Rozpoznawanie Dźwięków w Szumie'),
+
+                            React.createElement('div', { className: "bg-yellow-100 border border-yellow-300 rounded-lg p-3 mb-4" },
+                                React.createElement('p', { className: "text-sm text-yellow-800" },
+                                    `🔊 T=0s: Szum ${soundRecognitionState.noiseType} rozpoczyna`,
+                                    React.createElement('br'),
+                                    '🐕 T=2s: Dźwięk zwierzęcia PODCZAS szumu',
+                                    React.createElement('br'),
+                                    `🎯 SNR: ${soundRecognitionState.currentSNR}dB`
+                                )
+                            ),
+
+                            React.createElement('button', {
+                                onClick: () => {
+                                    const randomSound = soundRecognitionState.soundsLibrary[
+                                        Math.floor(Math.random() * soundRecognitionState.soundsLibrary.length)
+                                    ];
+
+                                    const wrongOptions = soundRecognitionState.soundsLibrary
+                                        .filter(s => s !== randomSound)
+                                        .sort(() => 0.5 - Math.random())
+                                        .slice(0, 3);
+
+                                    const allOptions = [...wrongOptions, randomSound]
+                                        .sort(() => 0.5 - Math.random());
+
+                                    setSoundRecognitionState(prev => ({
+                                        ...prev,
+                                        options: allOptions,
+                                        correctSound: randomSound.name
+                                    }));
+
+                                    playSoundWithNoise(randomSound.sound, soundRecognitionState.noiseType, soundRecognitionState.currentSNR);
+                                },
+                                className: "bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700"
+                            }, '▶️ Zagraj Dźwięk z Szumem')
+                        ),
+
+                        soundRecognitionState.options.length > 0 && React.createElement('div', { className: "bg-gray-50 rounded-lg p-4" },
+                            React.createElement('h4', { className: "font-semibold mb-4 text-center" }, 'Który dźwięk usłyszałeś?'),
+                            React.createElement('div', { className: "grid grid-cols-2 gap-4" },
+                                soundRecognitionState.options.map((sound, index) =>
+                                    React.createElement('button', {
+                                        key: index,
+                                        onClick: () => {
+                                            const correct = sound.name === soundRecognitionState.correctSound;
+                                            updateAdaptive(correct);
+
+                                            setTimeout(() => {
+                                                setSoundRecognitionState(prev => ({
+                                                    ...prev,
+                                                    options: [],
+                                                    correctSound: ''
+                                                }));
+                                            }, 1500);
+                                        },
+                                        className: "bg-white border-4 border-green-200 rounded-xl p-6 hover:border-green-400 text-center transition-all transform hover:scale-105 shadow-lg"
+                                    },
+                                        React.createElement('div', { className: "text-6xl mb-3" }, sound.image),
+                                        React.createElement('div', { className: "text-lg font-semibold text-gray-700" }, sound.name)
+                                    )
+                                )
+                            )
+                        ),
+
+                        soundRecognitionState.options.length === 0 && React.createElement('div', { className: "text-center text-gray-500 py-8" }, 'Kliknij przycisk wyżej żeby zacząć test!')
+                    )
+                ),
+
+                // Przycisk przerwy przy wysokim zmęczeniu
+                fatigueLevel > 80 && React.createElement('div', { className: "fixed bottom-4 right-4 bg-red-500 text-white p-4 rounded-lg shadow-lg" },
+                    React.createElement('p', { className: "font-semibold" }, '⚠️ Czas na przerwę!'),
+                    React.createElement('button', {
+                        onClick: () => setFatigueLevel(0),
+                        className: "bg-white text-red-500 px-3 py-1 rounded mt-2 text-sm"
+                    }, 'Zrób przerwę')
+                )
+            );
+        }
+
+        ReactDOM.render(React.createElement(KompletnyTreningAPD), document.getElementById('root'));
+    </script>
+</body>
+</html>
